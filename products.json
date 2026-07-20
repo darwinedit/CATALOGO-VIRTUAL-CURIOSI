@@ -1,0 +1,50 @@
+[
+  {
+    "id": "p1",
+    "name": "Mini parlante Bluetooth",
+    "description": "Sonido potente, batería de 8 horas, resistente a salpicaduras.",
+    "price": 45,
+    "category": "Tecnología",
+    "image": "https://placehold.co/400x400/BF6832/FCF3E7?text=Parlante"
+  },
+  {
+    "id": "p2",
+    "name": "Audífonos inalámbricos TWS",
+    "description": "Con estuche de carga, cancelación de ruido básica.",
+    "price": 39,
+    "category": "Tecnología",
+    "image": "https://placehold.co/400x400/BF6832/FCF3E7?text=Audifonos"
+  },
+  {
+    "id": "p3",
+    "name": "Lámpara LED con luces RGB",
+    "description": "Control por app y control remoto, ideal para cuarto o escritorio.",
+    "price": 32,
+    "category": "Hogar",
+    "image": "https://placehold.co/400x400/E7A874/33220F?text=Lampara"
+  },
+  {
+    "id": "p4",
+    "name": "Smartwatch deportivo",
+    "description": "Monitor de ritmo cardiaco, notificaciones, resistente al agua.",
+    "price": 89,
+    "category": "Tecnología",
+    "image": "https://placehold.co/400x400/BF6832/FCF3E7?text=Smartwatch"
+  },
+  {
+    "id": "p5",
+    "name": "Mini proyector portátil",
+    "description": "Conexión HDMI/USB, ideal para películas en la pared del cuarto.",
+    "price": 129,
+    "category": "Novedades",
+    "image": "https://placehold.co/400x400/8F4C22/FCF3E7?text=Proyector"
+  },
+  {
+    "id": "p6",
+    "name": "Llavero antipérdida Bluetooth",
+    "description": "Encuentra tus llaves o mochila desde el celular.",
+    "price": 19,
+    "category": "Novedades",
+    "image": "https://placehold.co/400x400/8F4C22/FCF3E7?text=Llavero"
+  }
+]

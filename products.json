@@ -33,11 +33,11 @@
   },
   {
     "id": "p5",
-    "name": "Mini proyector portátil",
-    "description": "Conexión HDMI/USB, ideal para películas en la pared del cuarto.",
+    "name": "Brasalete capibara",
+    "description": "Brasalete capibara para el brazo , curioso",
     "price": 129,
     "category": "Novedades",
-    "image": "https://placehold.co/400x400/8F4C22/FCF3E7?text=Proyector"
+    "image": "Imágenes/Brasaletecapibara.jpg"
   },
   {
     "id": "p6",

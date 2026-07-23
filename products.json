@@ -1,7 +1,7 @@
 [
   {
     "id": "p1",
-    "name": "Mini parlante Bluetooth",
+    "name": "Gorro de Invierno",
     "description": "Sonido potente, batería de 8 horas, resistente a salpicaduras.",
     "price": 45,
     "category": "Tecnología",
@@ -9,7 +9,7 @@
   },
   {
     "id": "p2",
-    "name": "Audífonos inalámbricos TWS",
+    "name": "Guantes de invierno",
     "description": "Con estuche de carga, cancelación de ruido básica.",
     "price": 39,
     "category": "Tecnología",

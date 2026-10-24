@@ -46,9 +46,10 @@ nav button{flex:1;border:0;background:none;color:var(--mu);font-size:11px;paddin
 <script>
 // ====== CONFIGURA AQUÍ ======
 const WHATSAPP="51962599148";      // tu número con código de país
-const ADMIN_PASS="admin123";       // cambia esta clave
 const GANANCIA=5;                  // ganancia por unidad para el vendedor
-const FIREBASE_URL="https://registro-de-comisiones-default-rtdb.asia-southeast1.firebasedatabase.app/"; // URL de tu Realtime Database (ver instrucciones)
+const FIREBASE_URL="https://registro-de-comisiones-default-rtdb.asia-southeast1.firebasedatabase.app/"; // URL de tu Realtime Database
+const FIREBASE_API_KEY="AIzaSyBz9lGwgB5pU_rs7Oaj1QZecOD59QCMI7s";   // Firebase → Configuración del proyecto → General → Clave de API web
+// Si cambias GANANCIA, cámbiala también en las reglas de Firebase (donde dice "* 5").
 let PRODUCTS=[ // respaldo: solo se usa si products.json no carga. Tus productos y fotos se leen de products.json
 {id:1,n:"Audífonos Bluetooth",c:"Audio",p:45,e:"🎧",img:"",nuevo:1},
 {id:2,n:"Smartwatch Fit",c:"Relojes",p:89,e:"⌚",img:"",nuevo:1},
@@ -61,30 +62,45 @@ let PRODUCTS=[ // respaldo: solo se usa si products.json no carga. Tus productos
 // ============================
 const $=s=>document.querySelector(s),fmt=n=>"S/ "+Number(n).toFixed(2),esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let DB={sellers:[],sales:[],wd:[]},S={tab:"shop",cat:"Todos",q:"",cart:{},sub:"cat",asub:"sales",user:null,admin:false};
-try{DB=JSON.parse(localStorage.getItem("curiosi_db"))||DB}catch(e){}
-try{const u=+localStorage.getItem("curiosi_user");if(u)S.user=u}catch(e){}
-// ===== Sincronización en la nube (Firebase Realtime Database por REST) =====
-const ONLINE=/^https:\/\//.test(FIREBASE_URL)&&!/TU-PROYECTO/.test(FIREBASE_URL);
+// ===== Sesión real (Firebase Authentication) + datos en la nube (Realtime Database), por REST =====
+const ONLINE=/^https:\/\//.test(FIREBASE_URL)&&!/TU-PROYECTO/.test(FIREBASE_URL)&&!/TU_API/.test(FIREBASE_API_KEY);
 const api=p=>FIREBASE_URL.replace(/\/$/,"")+"/"+p+".json";
-const cache=()=>{try{localStorage.setItem("curiosi_db",JSON.stringify(DB))}catch(e){}};
 const uid=()=>Date.now()*1000+Math.floor(Math.random()*1000);
-const sha=async s=>{try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("curiosi:"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){return s}};
-let toastT,AC,PEND=-1;
+const semail=p=>String(p).replace(/\D/g,"")+"@vendedor.curiosi.app";
+let AUTH=null,PEND=-1,PSTAT=0,BOOT=false,BUSY=false,toastT,AC;
+try{localStorage.removeItem("curiosi_db");localStorage.removeItem("curiosi_user")}catch(e){} // limpia datos de versiones anteriores
+const saveAuth=()=>{try{AUTH?localStorage.setItem("curiosi_auth",JSON.stringify(AUTH)):localStorage.removeItem("curiosi_auth")}catch(e){}};
+try{const a=JSON.parse(localStorage.getItem("curiosi_auth"));if(ONLINE&&a&&a.ref&&a.uid){AUTH=a;BOOT=true;if(a.adm)S.admin=true;else S.user=a.uid}}catch(e){}
+const AE={EMAIL_EXISTS:"Ese celular ya está registrado. Usa «Ya tengo cuenta».",INVALID_LOGIN_CREDENTIALS:"Celular o contraseña incorrectos.",INVALID_PASSWORD:"Celular o contraseña incorrectos.",EMAIL_NOT_FOUND:"Celular o contraseña incorrectos.",WEAK_PASSWORD:"La contraseña debe tener mínimo 6 caracteres.",TOO_MANY_ATTEMPTS:"Demasiados intentos. Espera unos minutos e intenta de nuevo.",OPERATION_NOT_ALLOWED:"Falta activar Email/Password en Firebase Authentication.",USER_DISABLED:"Esta cuenta está deshabilitada.",INVALID_EMAIL:"El correo o celular no es válido.","API key":"Revisa FIREBASE_API_KEY en index.html."};
+const aerr=e=>{const m=String(e&&e.message||e),k=Object.keys(AE).find(k=>m.includes(k));return k?AE[k]:"No se pudo conectar. Revisa tu internet e intenta de nuevo."};
+function setAuth(d,adm){AUTH={uid:d.localId||d.user_id,tok:d.idToken||d.id_token,ref:d.refreshToken||d.refresh_token,exp:Date.now()+(+(d.expiresIn||d.expires_in)-60)*1000,adm:adm?1:0};saveAuth();return AUTH}
+async function authCall(kind,email,password){const r=await fetch("https://identitytoolkit.googleapis.com/v1/accounts:"+kind+"?key="+FIREBASE_API_KEY,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,returnSecureToken:true})});const d=await r.json();if(!r.ok)throw new Error(d.error&&d.error.message||"ERROR");return setAuth(d)}
+async function token(){if(!AUTH)throw 0;if(Date.now()>AUTH.exp){const r=await fetch("https://securetoken.googleapis.com/v1/token?key="+FIREBASE_API_KEY,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(AUTH.ref)});const d=await r.json();if(!r.ok){AUTH=null;saveAuth();throw 0}setAuth(d,AUTH.adm)}return AUTH.tok}
 function toast(t){let e=$("#toast");if(!e){e=document.createElement("div");e.id="toast";e.className="toast";document.body.appendChild(e)}e.textContent=t;e.style.display="block";clearTimeout(toastT);toastT=setTimeout(()=>e.style.display="none",4000)}
 function beep(){try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.connect(g);g.connect(AC.destination);o.frequency.value=880;g.gain.value=.2;o.start();o.stop(AC.currentTime+.25)}catch(e){}try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
-async function put(col,o){ // guarda UN registro en la nube (no pisa lo de los demás)
- cache();if(!ONLINE)return true;
- try{const r=await fetch(api(col+"/"+o.id),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(o)});if(!r.ok)throw 0;return true}
- catch(e){toast("⚠️ Sin conexión: no se pudo guardar. Intenta de nuevo.");return false}
+async function put(col,o){ // guarda UN registro (las reglas de Firebase deciden si tienes permiso)
+ if(!ONLINE||!AUTH)return false;
+ try{const t=await token(),r=await fetch(api(col+"/"+o.id)+"?auth="+encodeURIComponent(t),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(o)});if(!r.ok)throw 0;return true}
+ catch(e){toast("⚠️ No se pudo guardar. Revisa tu internet e intenta de nuevo.");return false}
 }
-async function pull(){ // descarga todo lo que hay en la nube
- if(!ONLINE)return false;
- try{const r=await fetch(api("")+"?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw 0;const d=(await r.json())||{},L=o=>Object.values(o||{}).filter(Boolean);DB={sellers:L(d.sellers),sales:L(d.sales),wd:L(d.wd)};cache();return true}
- catch(e){return false}
+async function pull(forceAdmin){ // admin: descarga todo · vendedor: solo lo suyo
+ PSTAT=0;if(!ONLINE||!AUTH)return false;
+ try{
+  const t=encodeURIComponent(await token());let d;
+  if(forceAdmin||S.admin){const r=await fetch(api("")+"?auth="+t+"&t="+Date.now(),{cache:"no-store"});PSTAT=r.status;if(!r.ok)throw 0;d=(await r.json())||{}}
+  else{
+   const me_=AUTH.uid,q="?auth="+t+"&orderBy=%22s%22&equalTo="+encodeURIComponent('"'+me_+'"');
+   const g=async(p,qs)=>{const r=await fetch(api(p)+qs,{cache:"no-store"});PSTAT=r.status;if(!r.ok)throw 0;return r.json()};
+   const [pf,sa,wd]=await Promise.all([g("sellers/"+me_,"?auth="+t),g("sales",q),g("wd",q)]);
+   d={sellers:pf?{[me_]:pf}:{},sales:sa,wd:wd};
+  }
+  const L=o=>Object.values(o||{}).filter(Boolean);DB={sellers:L(d.sellers),sales:L(d.sales),wd:L(d.wd)};return true
+ }catch(e){return false}
 }
 const pendN=()=>DB.sales.filter(x=>x.st==="p").length+DB.wd.filter(x=>x.st==="p").length;
 async function tick(){ // revisa cada pocos segundos si hay novedades
  if(document.hidden||!(S.user||S.admin))return;
+ if(!AUTH){out();return}
  const before=JSON.stringify(DB);if(!await pull())return;if(JSON.stringify(DB)===before)return;
  if(S.admin){const n=pendN();if(PEND>=0&&n>PEND){beep();toast("🔔 Nueva solicitud pendiente")}PEND=n}
  const a=document.activeElement;if(a&&/INPUT|SELECT|TEXTAREA/.test(a.tagName))return;
@@ -99,7 +115,7 @@ function modal(html){const m=document.createElement("div");m.className="m";m.inn
 function render(){
  const bad=S.tab==="cart"?"":cartN()?`<span class="badge">${cartN()}</span>`:"";
  const pd=S.admin?pendN():0,nv=(t,i,l,b="")=>`<button class="${S.tab===t?"on":""}" onclick="S.tab='${t}';render();scrollTo(0,0)"><span>${i}</span>${l}${b}</button>`;
- $("#app").innerHTML=(S.tab==="shop"?shop():S.tab==="cart"?cart():work()+(!ONLINE&&(S.admin||S.user)?`<div class="box" style="background:#d93a4a;color:#fff">⚠️ Falta configurar FIREBASE_URL en index.html: las ventas solo se guardan en este dispositivo.</div>`:""))+`<nav>${nv("shop","🛍️","Tienda")}${nv("cart","🧾","Pedido",bad)}${nv("work","💼","Ganar",pd?`<span class="badge">${pd}</span>`:"")}</nav>`;
+ $("#app").innerHTML=(S.tab==="shop"?shop():S.tab==="cart"?cart():work()+(!ONLINE?`<div class="box" style="background:#d93a4a;color:#fff">⚠️ Falta configurar FIREBASE_URL y FIREBASE_API_KEY en index.html.</div>`:""))+`<nav>${nv("shop","🛍️","Tienda")}${nv("cart","🧾","Pedido",bad)}${nv("work","💼","Ganar",pd?`<span class="badge">${pd}</span>`:"")}</nav>`;
 }
 function shop(){
  const cats=["Todos",...new Set(PRODUCTS.map(p=>p.c))];
@@ -115,15 +131,45 @@ function cart(){
  return `<header><h1>🧾 Tu pedido</h1><p>Revisa y envía por WhatsApp</p></header>`+(it.length?`<div class="box">${it.map(p=>`<div class="row"><div>${p.img?`<img class="th" src="${esc(p.img)}" alt="" onerror="this.remove()">`:p.e} <b>${esc(p.n)}</b><div class="mu">${fmt(p.p)}</div></div><div class="q"><button onclick="add(${p.id},-1)">−</button><b>${S.cart[p.id]}</b><button onclick="add(${p.id},1)">+</button></div></div>`).join("")}<div class="row"><b>Total</b><b style="font-size:20px;color:var(--pr)">${fmt(tot)}</b></div></div><div class="box"><button class="btn wa" onclick="sendWA()">💬 Enviar pedido por WhatsApp</button></div>`:`<div class="box" style="text-align:center"><div style="font-size:50px">🛒</div><p class="mu">Tu pedido está vacío</p><button class="btn" onclick="S.tab='shop';render()">Ver productos</button></div>`)}
 function sendWA(){const it=Object.keys(S.cart).map(id=>PRODUCTS.find(p=>p.id==id));let t="Hola Curiosi 👋 quiero pedir:%0A"+it.map(p=>`• ${S.cart[p.id]}x ${p.n} — ${fmt(p.p*S.cart[p.id])}`).join("%0A")+`%0ATotal: ${fmt(it.reduce((a,p)=>a+p.p*S.cart[p.id],0))}`;window.open(`https://wa.me/${WHATSAPP}?text=${t}`,"_blank")}
 // ===== Vendedores / Admin =====
-function work(){if(S.admin)return admin();if(S.user&&me())return seller();return pitch()}
+function work(){if(BOOT)return `<header><h1>💼 Ganar</h1><p>Cargando tu cuenta…</p></header>`;if(S.admin)return admin();if(S.user&&me())return seller();return pitch()}
 function pitch(){return `<header><h1>💼 Trabaja con nosotros</h1><p>Gana comisiones vendiendo Curiosi</p></header>
 <div class="hero"><div style="font-size:54px">💸</div><h2>Gana S/ ${GANANCIA} por cada venta</h2><p class="mu">Regístrate, comparte el catálogo con tu precio y gana comisión. Tú no manejas stock: nosotros coordinamos la entrega.</p></div>
-<div class="box"><h3>Ingresar / Registrarme</h3><input id="ln" placeholder="Tu nombre (solo para registro)"><input id="lp" placeholder="Celular" inputmode="tel"><input id="lk" type="password" placeholder="Contraseña"><button class="btn" onclick="reg()">Crear mi cuenta</button><div style="height:8px"></div><button class="btn gh" onclick="login()">Ya tengo cuenta</button></div>
+<div class="box"><h3>Ingresar / Registrarme</h3><input id="ln" placeholder="Tu nombre (solo para registro)" maxlength="60" autocomplete="name"><input id="lp" placeholder="Celular" inputmode="tel" maxlength="20" autocomplete="username"><input id="lk" type="password" placeholder="Contraseña (mín. 6)" autocomplete="current-password"><button class="btn" onclick="reg()">Crear mi cuenta</button><div style="height:8px"></div><button class="btn gh" onclick="login()">Ya tengo cuenta</button></div>
 <div class="box"><button class="btn gh" onclick="adm()">🔐 Soy administrador</button></div>`}
-async function reg(){const n=$("#ln").value.trim(),p=$("#lp").value.trim(),k=$("#lk").value;if(!n||p.length<6||k.length<4)return alert("Completa nombre, celular válido y contraseña (mín. 4).");if(ONLINE&&!await pull())return alert("Sin conexión. Intenta de nuevo.");if(DB.sellers.some(s=>s.p===p))return alert("Ese celular ya está registrado.");const s={id:uid(),n,p,k:await sha(k)};DB.sellers.push(s);if(!await put("sellers",s)){DB.sellers.pop();return}S.user=s.id;try{localStorage.setItem("curiosi_user",s.id)}catch(e){}S.sub="cat";render()}
-async function login(){const p=$("#lp").value.trim(),k=$("#lk").value;if(ONLINE&&!await pull())return alert("Sin conexión. Intenta de nuevo.");const h=await sha(k),s=DB.sellers.find(x=>x.p===p&&x.k===h);if(!s)return alert("Celular o contraseña incorrectos.");S.user=s.id;try{localStorage.setItem("curiosi_user",s.id)}catch(e){}S.sub="cat";render()}
-async function adm(){const k=prompt("Clave de administrador:");if(k===ADMIN_PASS){S.admin=true;beep();await pull();PEND=pendN();render()}else if(k!==null)alert("Clave incorrecta")}
-function out(){S.user=null;S.admin=false;PEND=-1;try{localStorage.removeItem("curiosi_user")}catch(e){}render()}
+const CFG="Falta configurar FIREBASE_URL y FIREBASE_API_KEY en index.html.";
+async function reg(){
+ if(!ONLINE)return alert(CFG);if(BUSY)return;
+ const n=$("#ln").value.trim().slice(0,60),p=$("#lp").value.replace(/\D/g,"").slice(0,20),k=$("#lk").value;
+ if(!n||p.length<6||k.length<6)return alert("Completa nombre, celular válido y contraseña (mín. 6).");
+ BUSY=true;
+ try{const a=await authCall("signUp",semail(p),k),pf={id:a.uid,n,p};
+  if(!await put("sellers",pf)){AUTH=null;saveAuth();return alert("Tu cuenta se creó, pero no se pudo guardar tu perfil. Escribe tu nombre y pulsa «Ya tengo cuenta».")}
+  DB={sellers:[pf],sales:[],wd:[]};S.user=a.uid;S.admin=false;S.sub="cat";render()
+ }catch(e){alert(aerr(e))}finally{BUSY=false}
+}
+async function login(){
+ if(!ONLINE)return alert(CFG);if(BUSY)return;
+ const n=$("#ln").value.trim().slice(0,60),p=$("#lp").value.replace(/\D/g,"").slice(0,20),k=$("#lk").value;
+ if(!p||!k)return alert("Escribe tu celular y contraseña.");
+ BUSY=true;
+ try{const a=await authCall("signInWithPassword",semail(p),k);S.user=a.uid;S.admin=false;
+  if(!await pull())throw new Error("NET");
+  if(!me()){ // cuenta creada pero sin perfil: se completa con el nombre escrito
+   if(!n)throw new Error("NOPROFILE");
+   const pf={id:a.uid,n,p};if(!await put("sellers",pf))throw new Error("NET");DB.sellers=[pf]}
+  S.sub="cat";render()
+ }catch(e){AUTH=null;saveAuth();S.user=null;alert(String(e.message).includes("NOPROFILE")?"Tu perfil no se terminó de crear. Escribe tu nombre en el primer campo y pulsa «Ya tengo cuenta» otra vez.":aerr(e))}finally{BUSY=false}
+}
+function adm(){
+ if(!ONLINE)return alert(CFG);
+ const m=modal(`<h3>🔐 Administrador</h3><p class="mu">Entra con el correo y la contraseña de tu cuenta de administrador.</p><input id="ae" type="email" placeholder="Correo" autocomplete="username"><input id="ak" type="password" placeholder="Contraseña" autocomplete="current-password"><button class="btn" id="ao">Entrar</button>`);
+ $("#ao").onclick=async()=>{const b=$("#ao"),e=$("#ae").value.trim(),k=$("#ak").value;if(!e||!k)return alert("Escribe tu correo y contraseña.");b.disabled=true;b.textContent="Entrando...";
+  try{await authCall("signInWithPassword",e,k);
+   if(!await pull(true)){const den=PSTAT===401||PSTAT===403;AUTH=null;saveAuth();throw new Error(den?"NOADMIN":"NET")}
+   AUTH.adm=1;saveAuth();S.admin=true;S.user=null;PEND=pendN();m.remove();beep();render()
+  }catch(x){b.disabled=false;b.textContent="Entrar";alert(String(x.message).includes("NOADMIN")?"Esta cuenta no tiene permisos de administrador.":aerr(x))}}
+}
+function out(){AUTH=null;saveAuth();S.user=null;S.admin=false;PEND=-1;DB={sellers:[],sales:[],wd:[]};render()}
 function seller(){const u=me(),w=calc(u.id),tb=(k,l)=>`<button class="${S.sub===k?"on":""}" onclick="S.sub='${k}';render()">${l}</button>`;let b="";
  if(S.sub==="cat")b=`<div class="grid">${PRODUCTS.map(p=>`<div class="p">${pic(p)}<div class="pb"><b>${esc(p.n)}</b><small>Precio normal ${fmt(p.p)}</small><div class="pr">${fmt(p.p+GANANCIA)}</div><small style="color:var(--ok);font-weight:700">Tú ganas ${fmt(GANANCIA)}</small><button class="btn wa" onclick="share(${p.id})">Ofrecer</button><button class="btn gh" onclick="sale(${p.id})">Registrar venta</button></div></div>`).join("")}</div>`;
  if(S.sub==="sales"){const ss=DB.sales.filter(x=>x.s===u.id).reverse();b=`<div class="box"><h3>Mis ventas</h3>${ss.map(x=>`<div class="row"><div><b>${esc(x.pn)}</b> x${x.q}<div class="mu">${esc(x.c)} · ${new Date(x.d).toLocaleDateString()}</div></div><div style="text-align:right"><b>${fmt(x.g)}</b><br><span class="st" style="background:${x.st==="c"?"var(--ok)":x.st==="r"?"#d93a4a":"var(--wn)"}">${x.st==="c"?"Confirmada":x.st==="r"?"Rechazada":"Pendiente"}</span></div></div>`).join("")||'<p class="mu">Aún no registras ventas.</p>'}</div>`}
@@ -132,16 +178,17 @@ function seller(){const u=me(),w=calc(u.id),tb=(k,l)=>`<button class="${S.sub===
  <div class="bal"><div style="background:var(--wn)">Saldo pendiente<b>${fmt(w.pend)}</b><small>Esperando confirmación</small></div><div style="background:var(--ok)">Saldo disponible<b>${fmt(w.avail)}</b><small>Ya retirable</small></div></div>
  <div class="tabs">${tb("cat","Catálogo")}${tb("sales","Mis ventas")}${tb("wal","Billetera")}</div>${b}<div class="box"><button class="btn gh" onclick="out()">Cerrar sesión</button></div>`}
 function share(id){const p=PRODUCTS.find(x=>x.id===id);window.open(`https://wa.me/?text=${encodeURIComponent(`✨ ${p.n}\nPrecio: ${fmt(p.p+GANANCIA)}\nPide el tuyo conmigo 📲`)}`,"_blank")}
-function sale(id){const p=PRODUCTS.find(x=>x.id===id),m=modal(`<h3>Registrar venta: ${esc(p.n)}</h3><input id="mc" placeholder="Nombre del cliente"><input id="mq" type="number" min="1" value="1"><button class="btn ok" id="mo">Enviar para confirmación</button>`);$("#mo").onclick=async()=>{const c=$("#mc").value.trim(),q=Math.max(1,parseInt($("#mq").value)||1);if(!c)return alert("Escribe el cliente");const b=$("#mo");b.disabled=true;b.textContent="Enviando...";const r={id:uid(),s:S.user,pid:id,pn:p.n,c,q,g:GANANCIA*q,st:"p",d:Date.now()};DB.sales.push(r);if(!await put("sales",r)){DB.sales.pop();b.disabled=false;b.textContent="Enviar para confirmación";return}m.remove();S.sub="sales";render();toast("✅ Venta enviada al administrador")}}
+function sale(id){const p=PRODUCTS.find(x=>x.id===id),m=modal(`<h3>Registrar venta: ${esc(p.n)}</h3><input id="mc" placeholder="Nombre del cliente" maxlength="80"><input id="mq" type="number" min="1" value="1"><button class="btn ok" id="mo">Enviar para confirmación</button>`);$("#mo").onclick=async()=>{const c=$("#mc").value.trim().slice(0,80),q=Math.min(1000,Math.max(1,parseInt($("#mq").value)||1));if(!c)return alert("Escribe el cliente");const b=$("#mo");b.disabled=true;b.textContent="Enviando...";const r={id:uid(),s:S.user,pid:id,pn:p.n,c,q,g:GANANCIA*q,st:"p",d:Date.now()};DB.sales.push(r);if(!await put("sales",r)){DB.sales.pop();b.disabled=false;b.textContent="Enviar para confirmación";return}m.remove();S.sub="sales";render();toast("✅ Venta enviada al administrador")}}
 async function wdraw(){const w=calc(S.user);if(w.avail<5)return;const r={id:uid(),s:S.user,a:w.avail,st:"p",d:Date.now()};DB.wd.push(r);render();if(!await put("wd",r)){DB.wd.pop();render()}}
+const wdOk=x=>{const conf=DB.sales.filter(y=>y.s===x.s&&y.st==="c").reduce((a,y)=>a+y.g,0),otros=DB.wd.filter(y=>y.s===x.s&&y.id!==x.id&&y.st!=="r").reduce((a,y)=>a+y.a,0);return x.a<=conf-otros+0.001};
 function admin(){const tb=(k,l)=>`<button class="${S.asub===k?"on":""}" onclick="S.asub='${k}';render()">${l}</button>`,nm=id=>{const s=DB.sellers.find(x=>x.id===id);return s?esc(s.n)+" · "+esc(s.p):"?"};let b="";
  if(S.asub==="sales")b=`<div class="box"><h3>Ventas por confirmar</h3>${DB.sales.filter(x=>x.st==="p").map(x=>`<div class="row"><div><b>${esc(x.pn)}</b> x${x.q}<div class="mu">${nm(x.s)}<br>Cliente: ${esc(x.c)} · Comisión ${fmt(x.g)}</div></div><div><button class="btn sm ok" onclick="dec('sales',${x.id},'c')">✓</button> <button class="btn sm rd" onclick="dec('sales',${x.id},'r')">✕</button></div></div>`).join("")||'<p class="mu">Nada pendiente.</p>'}</div>`;
- if(S.asub==="wd")b=`<div class="box"><h3>Retiros solicitados</h3>${DB.wd.filter(x=>x.st==="p").map(x=>`<div class="row"><div><b>${fmt(x.a)}</b><div class="mu">${nm(x.s)}</div></div><div><button class="btn sm ok" onclick="dec('wd',${x.id},'d')">Pagado</button> <button class="btn sm rd" onclick="dec('wd',${x.id},'r')">✕</button></div></div>`).join("")||'<p class="mu">Sin solicitudes.</p>'}</div>`;
+ if(S.asub==="wd")b=`<div class="box"><h3>Retiros solicitados</h3>${DB.wd.filter(x=>x.st==="p").map(x=>`<div class="row"><div><b>${fmt(x.a)}</b><div class="mu">${nm(x.s)}</div>${wdOk(x)?"":'<div style="color:#d93a4a;font-weight:700;font-size:12px">⚠️ Supera lo ganado y confirmado</div>'}</div><div><button class="btn sm ok" onclick="dec('wd',${x.id},'d')">Pagado</button> <button class="btn sm rd" onclick="dec('wd',${x.id},'r')">✕</button></div></div>`).join("")||'<p class="mu">Sin solicitudes.</p>'}</div>`;
  if(S.asub==="sel")b=`<div class="box"><h3>Vendedores (${DB.sellers.length})</h3>${DB.sellers.map(s=>{const w=calc(s.id);return `<div class="row"><div><b>${esc(s.n)}</b><div class="mu">${esc(s.p)}</div></div><div style="text-align:right" class="mu">Pend. ${fmt(w.pend)}<br>Disp. ${fmt(w.avail)}<br>Pagado ${fmt(w.paid)}</div></div>`}).join("")||'<p class="mu">Sin vendedores.</p>'}</div>`;
  return `<header><h1>🔐 Administrador</h1><p>Confirma ventas y retiros</p></header><div class="tabs">${tb("sales","Ventas")}${tb("wd","Retiros")}${tb("sel","Vendedores")}</div>${b}<div class="box"><button class="btn gh" onclick="out()">Salir</button></div>`}
-async function dec(t,id,st){const x=(t==="sales"?DB.sales:DB.wd).find(y=>y.id===id);if(!x)return;const o=x.st;x.st=st;render();if(!await put(t,x)){x.st=o;render()}}
+async function dec(t,id,st){const x=(t==="sales"?DB.sales:DB.wd).find(y=>y.id===id);if(!x)return;if(t==="wd"&&st==="d"&&!wdOk(x)&&!confirm("Este retiro supera lo que el vendedor tiene confirmado. ¿Marcar como pagado de todas formas?"))return;const o=x.st;x.st=st;render();if(!await put(t,x)){x.st=o;render()}}
 // ===== Carga tus productos y fotos desde products.json (igual que tu catálogo actual) =====
-fetch("products.json?v="+Date.now()).then(r=>{if(!r.ok)throw 0;return r.json()}).then(d=>{if(!Array.isArray(d)||!d.length)throw 0;PRODUCTS=d.map((p,i)=>({id:i+1,n:String(p.name||""),c:String(p.category||"Otros"),p:Number(p.price)||0,e:"🛍️",img:p.image||"",d:p.description||"",nuevo:(p.nuevo||p.new)?1:0}))}).catch(()=>{}).finally(async()=>{render();if(await pull())render()});
+fetch("products.json?v="+Date.now()).then(r=>{if(!r.ok)throw 0;return r.json()}).then(d=>{if(!Array.isArray(d)||!d.length)throw 0;PRODUCTS=d.map((p,i)=>({id:i+1,n:String(p.name||""),c:String(p.category||"Otros"),p:Number(p.price)||0,e:"🛍️",img:p.image||"",d:p.description||"",nuevo:(p.nuevo||p.new)?1:0}))}).catch(()=>{}).finally(async()=>{render();if(BOOT){const ok=await pull();BOOT=false;if(!ok&&S.admin&&(PSTAT===401||PSTAT===403)){S.admin=false;AUTH=null;saveAuth()}else if(!ok)toast("Sin conexión: no se pudieron cargar tus datos");render()}});
 </script>
 </body>
 </html>

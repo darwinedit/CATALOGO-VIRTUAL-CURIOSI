@@ -184,22 +184,9 @@ const wdOk=x=>{const conf=DB.sales.filter(y=>y.s===x.s&&y.st==="c").reduce((a,y)
 function admin(){const tb=(k,l)=>`<button class="${S.asub===k?"on":""}" onclick="S.asub='${k}';render()">${l}</button>`,nm=id=>{const s=DB.sellers.find(x=>x.id===id);return s?esc(s.n)+" · "+esc(s.p):"?"};let b="";
  if(S.asub==="sales")b=`<div class="box"><h3>Ventas por confirmar</h3>${DB.sales.filter(x=>x.st==="p").map(x=>`<div class="row"><div><b>${esc(x.pn)}</b> x${x.q}<div class="mu">${nm(x.s)}<br>Cliente: ${esc(x.c)} · Comisión ${fmt(x.g)}</div></div><div><button class="btn sm ok" onclick="dec('sales',${x.id},'c')">✓</button> <button class="btn sm rd" onclick="dec('sales',${x.id},'r')">✕</button></div></div>`).join("")||'<p class="mu">Nada pendiente.</p>'}</div>`;
  if(S.asub==="wd")b=`<div class="box"><h3>Retiros solicitados</h3>${DB.wd.filter(x=>x.st==="p").map(x=>`<div class="row"><div><b>${fmt(x.a)}</b><div class="mu">${nm(x.s)}</div>${wdOk(x)?"":'<div style="color:#d93a4a;font-weight:700;font-size:12px">⚠️ Supera lo ganado y confirmado</div>'}</div><div><button class="btn sm ok" onclick="dec('wd',${x.id},'d')">Pagado</button> <button class="btn sm rd" onclick="dec('wd',${x.id},'r')">✕</button></div></div>`).join("")||'<p class="mu">Sin solicitudes.</p>'}</div>`;
- if(S.asub==="sel")b=`<div class="box"><h3>Vendedores (${DB.sellers.length})</h3>${DB.sellers.map(s=>{const w=calc(s.id);return `<div class="row"><div><b>${esc(s.n)}</b><div class="mu">${esc(s.p)}</div><button class="btn sm rd" style="margin-top:6px" onclick="delHist('${esc(s.id)}')">🗑️ Borrar historial</button></div><div style="text-align:right" class="mu">Pend. ${fmt(w.pend)}<br>Disp. ${fmt(w.avail)}<br>Pagado ${fmt(w.paid)}</div></div>`}).join("")||'<p class="mu">Sin vendedores.</p>'}</div>`;
+ if(S.asub==="sel")b=`<div class="box"><h3>Vendedores (${DB.sellers.length})</h3>${DB.sellers.map(s=>{const w=calc(s.id);return `<div class="row"><div><b>${esc(s.n)}</b><div class="mu">${esc(s.p)}</div></div><div style="text-align:right" class="mu">Pend. ${fmt(w.pend)}<br>Disp. ${fmt(w.avail)}<br>Pagado ${fmt(w.paid)}</div></div>`}).join("")||'<p class="mu">Sin vendedores.</p>'}</div>`;
  return `<header><h1>🔐 Administrador</h1><p>Confirma ventas y retiros</p></header><div class="tabs">${tb("sales","Ventas")}${tb("wd","Retiros")}${tb("sel","Vendedores")}</div>${b}<div class="box"><button class="btn gh" onclick="out()">Salir</button></div>`}
-async function dec(async function delHist(id){
- const s=DB.sellers.find(x=>x.id===id);if(!s)return;
- if(!confirm("¿Borrar TODAS las ventas y retiros de "+s.n+"? Esto no se puede deshacer."))return;
- const items=[...DB.sales.filter(x=>x.s===id).map(x=>["sales",x.id]),...DB.wd.filter(x=>x.s===id).map(x=>["wd",x.id])];
- if(!items.length){toast("Este vendedor no tiene historial");return}
- try{
-  const t=encodeURIComponent(await token());
-  const res=await Promise.all(items.map(([c,i])=>fetch(api(c+"/"+i)+"?auth="+t,{method:"DELETE"})));
-  if(res.some(r=>!r.ok))throw 0;
-  DB.sales=DB.sales.filter(x=>x.s!==id);DB.wd=DB.wd.filter(x=>x.s!==id);
-  render();toast("🗑️ Historial borrado");
- }catch(e){toast("⚠️ No se pudo borrar. Revisa las reglas de Firebase.");await pull(true);render()}
-}
- t,id,st){const x=(t==="sales"?DB.sales:DB.wd).find(y=>y.id===id);if(!x)return;if(t==="wd"&&st==="d"&&!wdOk(x)&&!confirm("Este retiro supera lo que el vendedor tiene confirmado. ¿Marcar como pagado de todas formas?"))return;const o=x.st;x.st=st;render();if(!await put(t,x)){x.st=o;render()}}
+async function dec(t,id,st){const x=(t==="sales"?DB.sales:DB.wd).find(y=>y.id===id);if(!x)return;if(t==="wd"&&st==="d"&&!wdOk(x)&&!confirm("Este retiro supera lo que el vendedor tiene confirmado. ¿Marcar como pagado de todas formas?"))return;const o=x.st;x.st=st;render();if(!await put(t,x)){x.st=o;render()}}
 // ===== Carga tus productos y fotos desde products.json (igual que tu catálogo actual) =====
 fetch("products.json?v="+Date.now()).then(r=>{if(!r.ok)throw 0;return r.json()}).then(d=>{if(!Array.isArray(d)||!d.length)throw 0;PRODUCTS=d.map((p,i)=>({id:i+1,n:String(p.name||""),c:String(p.category||"Otros"),p:Number(p.price)||0,e:"🛍️",img:p.image||"",d:p.description||"",nuevo:(p.nuevo||p.new)?1:0}))}).catch(()=>{}).finally(async()=>{render();if(BOOT){const ok=await pull();BOOT=false;if(!ok&&S.admin&&(PSTAT===401||PSTAT===403)){S.admin=false;AUTH=null;saveAuth()}else if(!ok)toast("Sin conexión: no se pudieron cargar tus datos");render()}});
 </script>
